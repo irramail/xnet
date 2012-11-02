@@ -1,19 +1,12 @@
 all : xnet
 
-xnet_objects = xnet.o
-
-
-
 CXXFLAGS= -g -I/usr/X11R6/include -I/usr/local/include
 
 
 
-xnet: $(xnet_objects)
+xnet: xnet.cpp
 	g++ -L/usr/local/lib -L/usr/X11R6/lib \
-	-o xnet $(xnet_objects) -lX11
-
-
-xnet.o : xnet.cpp
+	-o xnet xnet.cpp -lX11
 
 clean :
 	rm -f *.o xnet

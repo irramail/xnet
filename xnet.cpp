@@ -3,10 +3,16 @@
 //
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include "xlib++/display.hpp"
 #include "xlib++/window.hpp"
 #include "xlib++/graphics_context.hpp"
 #include "xlib++/command_button.hpp"
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+
 using namespace xlib;
 class main_window;
 static unsigned int level_Y = 0;
@@ -22,62 +28,143 @@ const std::string FNTMPXSESSIONRC = "/tmp/.xsessionrc";
 const std::string FNRESXSESSIONRC = "/home/uid0001/.xsessionrc";
 
 void saveConfig() {
+  std::vector<std::string> ixsessionrc;
+  if(proxy.length()) {
+    std::string proxy_str, tmp;
+    proxy_str = "http_proxy=http://";
+    if (login.length())
+      proxy_str += login;
+    if (passwd.length())
+      proxy_str += ":" + passwd;
+    if (login.length())
+      proxy_str.push_back('@');
+    proxy_str += proxy + ":" + port + "/ ";
+
+    std::ifstream ifile;
+    ifile.open(".xsessionrc");
+    while(ifile.good()) {
+      std::getline(ifile, tmp);
+      if(tmp.find("DISPLAY=:0.0 ~/main &") != std::string::npos)
+	tmp =  proxy_str + "DISPLAY=:0.0 ~/main &";
+      if(tmp.find("DISPLAY=:0.0 ~/mp/test &") != std::string::npos)
+	tmp =  proxy_str + "DISPLAY=:0.0 ~/mp/test &";
+      if(tmp.find("DISPLAY=:0.0 ~/updated &") != std::string::npos)
+	tmp =  proxy_str + "DISPLAY=:0.0 ~/updated &";
+
+      if(tmp.length())
+	ixsessionrc.push_back(tmp);
+    }
+    ifile.close();
+  }
+  else {
+    std::string tmp;
+    std::ifstream ifile;
+    ifile.open(".xsessionrc");
+    while(ifile.good()) {
+      std::getline(ifile, tmp);
+      if(tmp.find("DISPLAY=:0.0 ~/main &") != std::string::npos)
+	tmp = "DISPLAY=:0.0 ~/main &";
+      if(tmp.find("DISPLAY=:0.0 ~/mp/test &") != std::string::npos)
+	tmp = "DISPLAY=:0.0 ~/mp/test &";
+      if(tmp.find("DISPLAY=:0.0 ~/updated &") != std::string::npos)
+	tmp = "DISPLAY=:0.0 ~/updated &";
+
+      if(tmp.length())
+	ixsessionrc.push_back(tmp);
+    }
+    ifile.close();
+  }
+
+  std::ofstream ofilexs;
+  ofilexs.open(".xsessionrc");
+  for(std::vector<std::string>::iterator it = ixsessionrc.begin(); it != ixsessionrc.end(); it++)
+    ofilexs << *it <<std::endl;
+  ofilexs.close();
+
   if ( eth.length() && ip.length() && mask.length() && gw.length() && dns.length() && !modem.length() && !usb.length() & !prov.length()) {
-    std::cout << eth << " " << ip << " " << mask << " " << gw << " " << dns << std::endl;
+    //    std::cout << eth << " " << ip << " " << mask << " " << gw << " " << dns << std::endl;
 
-  std::ofstream of_networks;
+    std::ofstream of_networks;
 
-  of_networks.open(FNINTERFACES.c_str());
-
-  of_networks << "auto lo" << std::endl;
-  of_networks << "iface lo inet loopback" << std::endl;
-  of_networks << std::endl;
-
-  of_networks << "allow-hotplug eth" <<  eth << std::endl;
-  of_networks << "iface eth" << eth << " inet static" << std::endl;
-  if (mac.size() > 7 )
-    of_networks << "\thwaddress ether " << mac << std::endl;
-  if (ip.size() > 0 )
-    of_networks << "\taddress " << ip << std::endl;
-  if (mask.size() > 0 )
-    of_networks << "\tnetmask " << mask << std::endl;
-  if (gw.size() > 0 )
+    of_networks.open("/tmp/interfaces");
+    
+    of_networks << "auto lo" << std::endl;
+    of_networks << "iface lo inet loopback" << std::endl;
+    of_networks << std::endl;
+    
+    of_networks << "allow-hotplug eth" <<  eth << std::endl;
+    of_networks << "iface eth" << eth << " inet static" << std::endl;
+    if (mac.size() > 7 )
+      of_networks << "\thwaddress ether " << mac << std::endl;
+    if (ip.size() > 0 )
+      of_networks << "\taddress " << ip << std::endl;
+    if (mask.size() > 0 )
+      of_networks << "\tnetmask " << mask << std::endl;
+    if (gw.size() > 0 )
     of_networks << "\tgateway " << gw << std::endl;
-  if (dns.size() > 0 )
-    of_networks << "\tdns-nameservers " << dns << std::endl;
+    if (dns.size() > 0 )
+      of_networks << "\tdns-nameservers " << dns << std::endl;
+    
+    of_networks.close();
+    
+    of_networks.open("/tmp/resolv.conf");
+    of_networks << "nameserver " << dns << std::endl;
+    of_networks.close();
 
-  of_networks.close();
-
-  of_networks.open(FNRESOLV.c_str());
-  of_networks << "nameserver " << dns << std::endl;
-  of_networks.close();
-
+    std::ofstream ofile;
+    ofile.open("/tmp/netinter.sh");
+    ofile << "#!/bin/sh" << std::endl;
+    ofile << "xterm -e sudo cp -f /tmp/interfaces " << FNINTERFACES << std::endl;
+    ofile << "xterm -e sudo cp -f /tmp/resolv.conf " << FNRESOLV << std::endl;
+    ofile.close();
+    
+    pid_t child;
+    
+    if (!(child = fork())) {
+      execlp("/bin/sh", "/bin/sh", "/tmp/netinter.sh", NULL);
+      exit(0);
+    }
+    wait(0);
   }
 
-  if ( eth.length() && !ip.length() && !mask.length() && !gw.length() && !dns.length() && !modem.length() && !usb.length() & !prov.length()) {
-    std::cout << eth << std::endl;
+  if ( eth.length() && ip.empty() && mask.empty() && gw.empty() && dns.empty() && modem.empty() && usb.empty() & prov.empty()) {
+    //    std::cout << eth << std::endl;
+    
+    std::ofstream of_networks;
+    
+    of_networks.open("/tmp/interfaces");
+    
+    of_networks << "auto lo" << std::endl;
+    of_networks << "iface lo inet loopback" << std::endl;
+    of_networks << std::endl;
+    
+    of_networks << "allow-hotplug eth" <<  eth << std::endl;
+    of_networks << "iface eth" << eth << " inet dhcp" << std::endl;
+    if (mac.size() > 7 )
+      of_networks << "\thwaddress ether " << mac << std::endl;
+    
+    of_networks.close();
 
-  std::ofstream of_networks;
-
-  of_networks.open(FNINTERFACES.c_str());
-
-  of_networks << "auto lo" << std::endl;
-  of_networks << "iface lo inet loopback" << std::endl;
-  of_networks << std::endl;
-
-  of_networks << "allow-hotplug eth" <<  eth << std::endl;
-  of_networks << "iface eth" << eth << " inet dhcp" << std::endl;
-  if (mac.size() > 7 )
-    of_networks << "\thwaddress ether " << mac << std::endl;
-
-  of_networks.close();
+    std::ofstream ofile;
+    ofile.open("/tmp/netinter.sh");
+    ofile << "#!/bin/sh" << std::endl;
+    ofile << "xterm -e sudo cp -f /tmp/interfaces " << FNINTERFACES  << std::endl;
+    ofile.close();
+    
+    pid_t child;
+    
+    if (!(child = fork())) {
+      execlp("/bin/sh", "/bin/sh", "/tmp/netinter.sh", NULL);
+      exit(0);
+    }
+    wait(0);
   }
-
+  
   if ( modem.length() && usb.length() && prov.length() && !eth.length() && !ip.length() && !mask.length() && !gw.length() && !dns.length()) {
-    std::cout << modem << " " << usb << " " << prov << std::endl;
+    //    std::cout << modem << " " << usb << " " << prov << std::endl;
 
     std::string fnwvdial, wvdial_str;
-    fnwvdial = "/etc/wvdial.conf";
+    fnwvdial = "/tmp/netwvdial.conf";
 
     std::ofstream owdial;
     std::ofstream of_networks;
@@ -138,6 +225,28 @@ void saveConfig() {
 
       owdial.close();
     }
+
+    std::ofstream ofile;
+    ofile.open("/tmp/netwvdial.sh");
+    ofile << "#!/bin/sh" << std::endl;
+    ofile << "xterm -e sudo cp -f " << fnwvdial  << " /etc/wvdial.conf" << std::endl;
+    ofile << "xterm -e sudo sh -c \"echo '* * * * *          root    /usr/bin/wvdial' >> " << FNCRONTAB << "\"" << std::endl;
+    ofile << "xterm -e sudo sh -c \"echo 'internet        *        mobile' >> " << FNCHAP << "\"" << std::endl;
+    ofile << "xterm -e sudo sh -c \"echo 'cdma        *        cdma' >> " << FNCHAP << "\"" << std::endl;
+    ofile << "xterm -e sudo sh -c \"echo 'internet        *        mobile' >> " << FNPAP << "\"" << std::endl;
+    ofile << "xterm -e sudo sh -c \"echo 'cdma        *        cdma' >> " << FNPAP << "\"" << std::endl;
+    ofile << "xterm -e sudo sh -c \"echo 'auto lo' > " << FNINTERFACES << "\"" << std::endl;
+    ofile << "xterm -e sudo sh -c \"echo 'iface lo inet loopback' >> " << FNINTERFACES << "\"" << std::endl;
+    ofile.close();
+    
+    pid_t child;
+    
+    if (!(child = fork())) {
+      execlp("/bin/sh", "/bin/sh", "/tmp/netwvdial.sh", NULL);
+      exit(0);
+    }
+    wait(0);
+    /*
     of_networks.open(FNCRONTAB.c_str(), std::ios::out | std::ios::app);
     of_networks << "* * * * * \t root\t /usr/bin/wvdial" << std::endl;
     of_networks.close();
@@ -157,6 +266,7 @@ void saveConfig() {
     of_networks << "iface lo inet loopback" << std::endl;
     of_networks << std::endl;
     of_networks.close();
+    */
   }
 }
 
@@ -194,25 +304,54 @@ public:
     if (c.is_printable())
       {
 	bool change = true;
+	//          ethN             modemN           usbN               provN
 	if (get_id() == 0 || get_id() == 10 || get_id() == 11 || get_id() == 12)
           if ((get_name().length() >= 3) || (! isdigit(c.get_text()[0])))
 	    change = false;
 
+	//       proxy port
         if (get_id() == 7)
           if ((get_name().length() >= 6) || (! isdigit(c.get_text()[0])))
             change = false;
 
+	//        login            passwoed
         if (get_id() == 8 || get_id() == 9)
           if (get_name().length() >= 17)
             change = false;
 
+	//           ip              mask              gw              dns              proxy
         if (get_id() == 1 || get_id() == 2 || get_id() == 3 || get_id() == 5 || get_id() == 6)
           if ((get_name().length() >= 16) || ((! isdigit(c.get_text()[0])) && c.get_text() != "."))
             change = false;
 
+	//          mac
         if (get_id() == 4)
           if ((get_name().length() >= 18) || ((! isdigit(c.get_text()[0])) && c.get_text() != ":" && c.get_text() != "a" && c.get_text() != "b" && c.get_text() != "c" && c.get_text() != "d" && c.get_text() != "f"))
             change = false;
+
+	if(!(eth.empty() && ip.empty() && mask.empty() && gw.empty() && mac.empty() && dns.empty() && proxy.empty() && port.empty() && login.empty() && passwd.empty()) && (get_id() == 10 || get_id() == 11 || get_id() == 12))
+	  change = false;
+
+	if(eth.empty() && (get_id() == 1 || get_id() == 4))
+	  change = false;
+
+	if(ip.empty() && (get_id() == 2))
+	  change = false;
+
+	if(mask.empty() && (get_id() == 3))
+	  change = false;
+
+	if(proxy.empty() && (get_id() == 7))
+	  change = false;
+
+	if((port.empty()) && (get_id() == 8 || get_id() == 9))
+	  change = false;
+
+	if(login.empty() && (get_id() == 9))
+	  change = false;
+
+	if(!(modem.empty() && usb.empty() && prov.empty()) && (get_id() < 10))
+	  change = false;
 
 	if (get_name()=="0|" && change == true && get_id() != 4)
 	  set_name("|");
@@ -295,15 +434,15 @@ class main_window : public window
     m_rd_IP->set_name("IP[192.168.0.9]");
     m_rd_MASK->set_name("MASK[255.255.255.0]");
     m_rd_GW->set_name("GW[192.168.0.1]");
-    m_rd_MAC->set_name("MAC[00:00:00:00:00:00]");
+    m_rd_MAC->set_name("MAC[00:_:_:_:_:_]");
     m_rd_DNS->set_name("DNS[8.8.8.8]");
     m_rd_PROXY->set_name("Proxy[192.168.0.1]");
     m_rd_PORT->set_name("Port[3128, 8080]");
     m_rd_LOGIN->set_name("Login[user]");
     m_rd_PASSWD->set_name("Pasword[passwd]");
-    m_rd_MODEM->set_name("AnyData[1], AirPlus[2], MTS+Megafon[3]");
-    m_rd_USB->set_name("USB0[0], USB1[1], USB2[2]");
-    m_rd_PROV->set_name("PROVIDER[0,1,2,3]");
+    m_rd_MODEM->set_name("AD/AP/MTS+Mn[1/2/3]");
+    m_rd_USB->set_name("USB0,U1,U2[0/1/2]");
+    m_rd_PROV->set_name("PROV[0,1,2,3]");
     m_rd_SAVE->set_name("Save");
     m_rd_EXIT->set_name("Exit");
     m_SAVE->hide();
