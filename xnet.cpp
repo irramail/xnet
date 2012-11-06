@@ -1,6 +1,11 @@
 //
 // xnet.cpp
 //
+//netstat -ie
+//ip -f inet a | awk '/: / { print $2 }'      #only activated
+//sudo lshw -class network | grep "logical name" | awk {'print $3'}
+//find /sys/ -name '*eth*' | grep devices | sed s/\\//" "/g | awk {'print $7'}
+
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -26,6 +31,35 @@ const std::string FNCHAP = "/etc/ppp/chap-secrets";
 const std::string FNPAP = "/etc/ppp/pap-secrets";
 const std::string FNTMPXSESSIONRC = "/tmp/.xsessionrc";
 const std::string FNRESXSESSIONRC = "/home/uid0001/.xsessionrc";
+
+std::string Nofeth() {
+  std::string result, tstr;
+  std::ofstream ofile;
+  std::ifstream ifile;
+
+  ofile.open("/tmp/Nofeth.sh");
+  ofile << "#!/bin/sh" << std::endl;
+  ofile << "find /sys/ -name '*eth*' | grep devices | sed s/\\\\//' '/g | awk {'print $7'} > /tmp/Nofeth.log" << std::endl;
+  ofile.close();
+
+  pid_t child;
+
+  if (!(child = fork())) {
+    execlp("/bin/sh", "/bin/sh", "/tmp/Nofeth.sh", NULL);
+    exit(0);
+  }
+  wait(0);
+
+  ifile.open("/tmp/Nofeth.log");
+  if(ifile.good())
+    std::getline(ifile, tstr);
+  ifile.close();
+
+  if(tstr.length() > 3)
+    result = tstr.substr(3);
+
+  return result;
+}
 
 void saveConfig() {
   std::vector<std::string> ixsessionrc;
@@ -447,6 +481,7 @@ class main_window : public window
     m_rd_EXIT->set_name("Exit");
     m_SAVE->hide();
     m_EXIT->hide();
+    m_ETH->set_name(Nofeth() + "|");
   }
   ~main_window(){ delete m_ETH, m_IP, m_MASK, m_GW, m_DNS, m_MAC, m_PROXY, m_PORT, m_LOGIN, m_PASSWD, m_MODEM, m_USB, m_PROV, m_SAVE, m_EXIT, m_rd_ETH, m_rd_IP, m_rd_MASK, m_rd_GW, m_rd_DNS, m_rd_MAC, m_rd_PROXY, m_rd_PORT, m_rd_LOGIN, m_rd_PASSWD, m_rd_MODEM, m_rd_USB, m_rd_PROV, m_rd_SAVE, m_rd_EXIT; }
 
